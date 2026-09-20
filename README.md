@@ -1,16 +1,4 @@
-audio_search/
-├── database/              # База отпечатков, модели, FAISS индекс
-├── music_library/         # Локальные треки
-├── samples/               # Семплы для поиска
-├── templates/             # HTML шаблоны
-├── static/                # CSS/JS
-├── uploads/               # Загруженные файлы
-├── index.py              # Индексация библиотеки
-├── search.py             # Поиск по семплу
-├── train.py              # Обучение CNN модели
-├── cnn_model.py          # Свёрточная нейросеть
-├── augmentation.py       # Аугментация данных
-├── vector_index.py       # FAISS векторный поиск
-├── hot_reload.py         # Горячее обновление базы
-├── app.py                # FastAPI веб-интерфейс
-└── requirements.txt
+![](https://raw.githubusercontent.com/triple-xxx-code/shazzzam/refs/heads/main/1789898773518-01a0be47-aab0-7abd-9f00-4177c1db4964.jpeg)
+
+![](https://raw.githubusercontent.com/triple-xxx-code/shazzzam/refs/heads/main/1789897781408-01a0be38-71d3-7fce-91fe-cc1be8fe0716.png)
+
