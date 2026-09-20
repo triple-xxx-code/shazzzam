@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎵 Audio Search</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 Audio Search</h1>
+            <p class="subtitle">Поиск музыки по семплу с помощью CNN + FAISS</p>
+        </header>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value">{{ stats.tracks or 0 }}</div>
+                <div class="stat-label">Треков в базе</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ "%.1f"|format(stats.db_size or 0) }} MB</div>
+                <div class="stat-label">Размер базы</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">CNN+FAISS</div>
+                <div class="stat-label">Метод поиска</div>
+            </div>
+        </div>
+        
+        <div class="upload-section">
+            <h2>🔍 Поиск по аудио</h2>
+            
+            <div class="search-settings">
+                <div style="margin-bottom: 15px;">
+                    <label for="minSimilarity" style="display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 5px;">
+                        <span>🎯 Порог уверенности</span>
+                        <span id="simValue">30%</span>
+                    </label>
+                    <input type="range" id="minSimilarity" name="min_similarity" min="0" max="1" step="0.05" value="0.3">
+                    <small>Меньше значение = больше находок, но выше шанс ложных срабатываний</small>
+                </div>
+                
+                <div>
+                    <label for="topK" style="display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 5px;">
+                        <span>📊 Количество результатов</span>
+                        <span id="topKValue">10</span>
+                    </label>
+                    <input type="range" id="topK" name="top_k" min="1" max="50" step="1" value="10">
+                </div>
+            </div>
+
+            <form id="uploadForm" enctype="multipart/form-data">
+                <div class="drop-zone" id="dropZone">
+                    <input type="file" id="audioFile" name="file" accept="audio/*" required>
+                    <div class="drop-zone-text">
+                        <p>📁 Перетащите аудио файл сюда</p>
+                        <p>или нажмите для выбора</p>
+                        <p class="hint">MP3, WAV, FLAC, OGG, M4A</p>
+                    </div>
+                </div>
+                <button type="submit" class="btn-primary" id="searchBtn">🎯 Искать</button>
+            </form>
+        </div>
+        
+        <div class="results" id="results" style="display: none;">
+            <h2>📊 Результаты</h2>
+            <div class="results-info" id="resultsInfo"></div>
+            <div class="results-list" id="resultsList"></div>
+        </div>
+        
+        <div class="admin-section">
+            <h2>⚙️ Управление</h2>
+            <div class="admin-buttons">
+                <button class="btn-secondary" onclick="reindex()">🔄 Переиндексировать</button>
+                <button class="btn-secondary" onclick="checkHotReload()">🔥 Горячее обновление</button>
+                <button class="btn-secondary" onclick="showStats()">📈 Статистика</button>
+            </div>
+            <div id="adminStatus"></div>
+        </div>
+    </div>
+    
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('audioFile');
+        const form = document.getElementById('uploadForm');
+        
+        // Логика слайдеров
+        const simSlider = document.getElementById('minSimilarity');
+        const simValue = document.getElementById('simValue');
+        simSlider.addEventListener('input', () => {
+            simValue.textContent = Math.round(simSlider.value * 100) + '%';
+        });
+
+        const topKSlider = document.getElementById('topK');
+        const topKValue = document.getElementById('topKValue');
+        topKSlider.addEventListener('input', () => {
+            topKValue.textContent = topKSlider.value;
+        });
+        
+        // Drag & drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            fileInput.files = e.dataTransfer.files;
+            updateDropZoneText();
+        });
+        
+        fileInput.addEventListener('change', updateDropZoneText);
+        
+        function updateDropZoneText() {
+            const text = dropZone.querySelector('.drop-zone-text');
+            if (fileInput.files.length > 0) {
+                text.innerHTML = `<p>✅ ${fileInput.files[0].name}</p>`;
+            }
+        }
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (!fileInput.files.length) {
+                alert('Выберите файл');
+                return;
+            }
+            
+            const btn = document.getElementById('searchBtn');
+            btn.disabled = true;
+            btn.textContent = '🔍 Идёт поиск...';
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('min_similarity', simSlider.value);
+            formData.append('top_k', topKSlider.value);
+            
+            try {
+                const response = await fetch('/upload-and-search', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || `Ошибка сервера: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    alert('Ошибка: ' + data.error);
+                } else {
+                    displayResults(data);
+                }
+            } catch (err) {
+                console.error("Детальная ошибка:", err);
+                alert('Ошибка: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🎯 Искать';
+            }
+        });
+        
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('results');
+            const infoDiv = document.getElementById('resultsInfo');
+            const listDiv = document.getElementById('resultsList');
+            
+            resultsDiv.style.display = 'block';
+            infoDiv.innerHTML = `
+                <p>📄 Файл: <strong>${data.filename}</strong></p>
+                <p>⏱️ Время поиска: <strong>${data.search_time}с</strong></p>
+                <p>🎯 Найдено совпадений: <strong>${data.total_results}</strong></p>
+            `;
+            
+            listDiv.innerHTML = '';
+            data.results.forEach((result, idx) => {
+                const item = document.createElement('div');
+                item.className = 'result-item';
+                item.innerHTML = `
+                    <div class="result-rank">#${idx + 1}</div>
+                    <div class="result-info">
+                        <div class="result-title">${result.track_id}</div>
+                        <div class="result-path">${result.path}</div>
+                    </div>
+                    <div class="result-score">
+                        <div class="score-bar" style="width: ${result.similarity * 100}%"></div>
+                        <span>${(result.similarity * 100).toFixed(1)}%</span>
+                    </div>
+                `;
+                listDiv.appendChild(item);
+            });
+            
+            // Плавная прокрутка к результатам
+            resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        
+        async function reindex() {
+            if (!confirm('Переиндексировать всю библиотеку?')) return;
+            
+            const status = document.getElementById('adminStatus');
+            status.innerHTML = '<p class="info">⏳ Переиндексация запущена...</p>';
+            
+            const response = await fetch('/reindex', { method: 'POST' });
+            const data = await response.json();
+            status.innerHTML = `<p class="success">✅ ${data.status}</p>`;
+        }
+        
+        async function checkHotReload() {
+            const status = document.getElementById('adminStatus');
+            
+            try {
+                const response = await fetch('/hot-reload-status');
+                const data = await response.json();
+                
+                if (data.error) {
+                    status.innerHTML = `<p class="error">❌ ${data.error}</p>`;
+                    return;
+                }
+                
+                status.innerHTML = `
+                    <p>🔥 Статус: <strong>${data.running ? 'Активно' : 'Остановлено'}</strong></p>
+                    <p>📂 Отслеживается файлов: ${data.tracked_files}</p>
+                    <p>📝 Ожидает обработки:</p>
+                    <ul>
+                        <li>Добавлено: ${data.pending_changes.added}</li>
+                        <li>Изменено: ${data.pending_changes.modified}</li>
+                        <li>Удалено: ${data.pending_changes.removed}</li>
+                    </ul>
+                `;
+                
+                const total = data.pending_changes.added + data.pending_changes.modified + data.pending_changes.removed;
+                if (total > 0) {
+                    if (confirm(`Применить ${total} изменений?`)) {
+                        await applyHotReload();
+                    }
+                }
+            } catch (err) {
+                status.innerHTML = `<p class="error">❌ Ошибка: ${err}</p>`;
+            }
+        }
+        
+        async function applyHotReload() {
+            const status = document.getElementById('adminStatus');
+            const response = await fetch('/apply-hot-reload', { method: 'POST' });
+            const data = await response.json();
+            status.innerHTML += `<p class="success">✅ Применено изменений: ${data.changes_applied}</p>`;
+        }
+        
+        async function showStats() {
+            const status = document.getElementById('adminStatus');
+            const response = await fetch('/stats');
+            const data = await response.json();
+            
+            status.innerHTML = `
+                <p><strong>📊 Статистика базы:</strong></p>
+                <ul>
+                    <li>Треков: ${data.tracks_count}</li>
+                    <li>Метод: ${data.method}</li>
+                    <li>Векторов в FAISS: ${data.vector_index_size}</li>
+                </ul>
+            `;
+        }
+    </script>
+</body>
+</html>
