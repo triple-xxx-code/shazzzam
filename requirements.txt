@@ -1,0 +1,15 @@
+librosa>=0.10.0
+numpy>=1.24.0
+scipy>=1.10.0
+scikit-learn>=1.2.0
+soundfile>=0.12.0
+joblib>=1.2.0
+tensorflow>=2.13.0
+faiss-cpu>=1.7.4
+fastapi>=0.100.0
+uvicorn>=0.23.0
+python-multipart>=0.0.6
+jinja2>=3.1.0
+aiofiles>=23.0.0
+matplotlib>=3.7.0
+pydantic>=2.0.0
